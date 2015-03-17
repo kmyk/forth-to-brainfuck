@@ -1,6 +1,18 @@
 #!/usr/bin/bash
 
+brainfuck-simple () {
+    # EOF is -1 (fgetc)
+    # memory is char[30000], not a loop
+    if [ -x ./interpreter ] ; then
+        $CC -o interpreter interpreter.c
+    fi
+    ./interpreter "$@"
+}
+brainfuck-bf () {
+    bf "$1"
+}
 brainfuck-beef () {
+    # on my environment, it is 7bit
     beef "$1"
 }
 brainfuck-bfopt () {
@@ -14,6 +26,7 @@ brainfuck-bfopt () {
     rm $g
 }
 brainfuck-bfc () {
+    # on my environment, it sometimes throw sigsegv
     local f
     f=$(mktemp --suffix=.bin)
     cat "$1" | bfc > $f
@@ -22,8 +35,13 @@ brainfuck-bfc () {
     rm $f
 }
 brainfuck () {
-    brainfuck-beef "$@"
+    brainfuck-simple "$@"
 }
+
+if brainfuck <(echo "-.") | hexdump | diff - <(python -c 'import sys; sys.stdout.buffer.write(b"\xff")' | hexdump) ; then : ; else
+    echo 'your brainfuck interpreter is not 8bit'
+    exit 1
+fi
 
 translate () {
     brainfuck <(runghc ForthToBrainfuck.hs)
