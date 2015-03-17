@@ -28,7 +28,7 @@ anySymbol = try $ delimiters >> many1 (satisfy (not . isSpace))
 symbol :: Stream s m Char => String -> ParsecT s u m ()
 symbol s = do
     t <- anySymbol
-    when (t /= s) parserZero
+    when (t /= s) (unexpected $ "symbol " ++ show t)
 
 data Brainfuck
     = Incr
