@@ -88,6 +88,8 @@ data StackL
     | Swap
     | Rot
     | NotRot
+    | Pick Int
+    | Roll Int
     | Clear
     | Add Int
     | Sub Int
@@ -182,6 +184,15 @@ stackl1 :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
 stackl1 e = choice $ map try
     [ do
         n <- anySymbol
+        unless (all isDigit n)
+            parserZero
+        f <- choice $ map try
+            [ symbol "pick" >> return Pick
+            , symbol "roll" >> return Roll
+            ]
+        return [f $ read n]
+    , do
+        n <- anySymbol
         if all isDigit n || (not (null $ tail n) && head n == '-' && all isDigit (tail n))
             then return [Push $ read n]
             else parserZero
@@ -243,6 +254,8 @@ fromStackL = f where
         Swap : xs -> readBrainfuck "[>+<-]<[>+<-]>>[<<+>>-]<" ++ f xs
         Rot    : xs -> readBrainfuck "<<[>>>+<<<-]>[<+>-]>[<+>-]>[<+>-]<" ++ f xs
         NotRot : xs -> readBrainfuck "[>+<-]<[>+<-]<[>+<-]>>>[<<<+>>>-]<" ++ f xs
+        Pick n : xs -> pickL n ++ f xs
+        Roll n : xs -> rollL n ++ f xs
         Clear : xs -> While [Decr] : f xs
         Add n : xs -> replicate n Incr ++ f xs
         Sub n : xs -> replicate n Decr ++ f xs
@@ -369,6 +382,26 @@ gtL = unsafeForthToBrainfuck $ unlines
     ]
 ltL :: [Brainfuck]
 ltL = unsafeForthToBrainfuck "swap >"
+
+pickL :: Int -> [Brainfuck]
+pickL n = readBrainfuck $ concat
+    [ nprev
+    , "[", nnext, ">+>+<<", nprev, "-]"
+    , nnext, ">>[", nprev, "<<+>>", nnext, "-]"
+    , "<"
+    ] where
+        nnext = replicate n '>'
+        nprev = replicate n '<'
+
+rollL :: Int -> [Brainfuck]
+rollL n = readBrainfuck $ concat
+    [ nprev
+    , "[", nnext, ">+<", nprev, "-]"
+    , concat $ replicate (n+1) ">[<+>-]"
+    , "<"
+    ] where
+        nnext = replicate n '>'
+        nprev = replicate n '<'
 
 main :: IO ()
 main = do
