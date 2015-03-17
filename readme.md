@@ -59,7 +59,6 @@
 
 ## todo
 
--   support `<`, `<=`, `>`, `>=`
 -   support some multiple length arithmetic
 -   support `recurse` or `recursive`
 

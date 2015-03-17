@@ -252,10 +252,10 @@ fromStackL = f where
         OneF : xs -> readBrainfuck    "[>-<[-]]>[<->+]<" ++ f xs
         EqF : xs -> f $ Minus : NotF : xs
         NeF : xs -> f $ Minus : OneF : xs
-        LeF : xs -> error "not implemented"
-        LtF : xs -> error "not implemented"
-        GeF : xs -> error "not implemented"
-        GtF : xs -> error "not implemented"
+        LeF : xs -> leL ++ f xs
+        LtF : xs -> ltL ++ f xs
+        GeF : xs -> geL ++ f xs
+        GtF : xs -> gtL ++ f xs
         Emit : xs -> f $ WriteL : Drop  : xs
         Key  : xs -> f $ Push 0 : ReadL : xs
         Print : xs -> printL ++ f xs
@@ -337,6 +337,31 @@ printL = unsafeForthToBrainfuck $ unlines
         , "48 + emit"
         , "space"
         ]
+
+geL :: [Brainfuck]
+geL = unsafeForthToBrainfuck $ unlines
+    [ "begin dup while"
+    , "    over"
+    , "    if"
+    , "        swap 1- swap"
+    , "    then"
+    , "    1-"
+    , "repeat"
+    , "drop"
+    , "0<>"
+    ]
+leL :: [Brainfuck]
+leL = unsafeForthToBrainfuck "swap >="
+gtL :: [Brainfuck]
+gtL = unsafeForthToBrainfuck $ unlines
+    [ "over over <> if"
+    , "    >="
+    , "else"
+    , "    -1"
+    , "then"
+    ]
+ltL :: [Brainfuck]
+ltL = unsafeForthToBrainfuck "swap >"
 
 main :: IO ()
 main = do
