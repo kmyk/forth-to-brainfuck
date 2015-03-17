@@ -3,7 +3,7 @@
 brainfuck-simple () {
     # EOF is -1 (fgetc)
     # memory is char[30000], not a loop
-    if [ -x ./interpreter ] ; then
+    if [ ! -x ./interpreter ] ; then
         $CC -o interpreter interpreter.c
     fi
     ./interpreter "$@"
@@ -115,165 +115,9 @@ assert 'char A 0 if char t emit                  then emit'  A
 assert 'char A 7 if char t emit else char f emit then emit' tA
 assert 'char A 0 if char t emit else char f emit then emit' fA
 
-preserve <<'EOF'
-48 emit
-bye
-EOF
-
-preserve <<'EOF'
-: foo ( n -- n^2+n+1 )
-    dup dup * + 1+
-;
-4 foo emit
-6 foo emit
-bye
-EOF
-
-preserve <<'EOF'
-: foo ( n -- 2*n )
-    dup +
-;
-: bar ( n -- 4*n )
-    foo foo
-;
-: baz ( n -- 16*n )
-    bar foo bar
-;
-1 foo emit
-2 foo emit
-3 foo emit
-bye
-EOF
-
-preserve <<'EOF'
-: emit-n 48 + emit ;
-: foo
-    dup emit-n
-    1+  emit-n
-;
-8 foo
-bye
-EOF
-
-preserve <<'EOF'
-: emit-n 48 + emit ;
-: foo
-    begin dup while
-        dup emit-n
-        1-
-    repeat
-;
-6 7 8 foo emit-n emit-n emit-n
-bye
-EOF
-
-preserve <<'EOF'
-: emit-n 48 + emit ;
-: foo
-    if
-        1 emit-n
-    else
-        0 emit-n
-    then
-;
-0 0 foo emit-n
-0 1 foo emit-n
-0 2 foo emit-n
-bye
-EOF
-
-preserve <<'EOF'
-123 .
-103 .
-120 .
-100 .
-72 .
-34 .
-12 .
-10 .
-8 .
-2 .
-1 .
-0 .
-bye
-EOF
-
-preserve <<'EOF'
-: foo
-    10 swap
-    case
-        0 of 48 emit endof
-        1 of 49 emit endof
-        2 of 50 emit endof
-        48 + emit 0
-    endcase
-    emit
-;
-0 foo
-1 foo
-2 foo
-3 foo
-4 foo
-bye
-EOF
-
-preserve <<'EOF'
-bl
-65 emit
-10 space
-cr
-space
-bye
-EOF
-
-preserve <<'EOF'
-10 66 . emit
-bye
-EOF
-
-preserve <<'EOF'
-: foo
-    case
-    0 of 65 emit endof
-    1 of 66 emit endof
-    2 of 67 emit endof
-    3 of 68 emit endof
-    4 of 69 emit endof
-    97 + dup emit
-    endcase
-;
-10 0 foo emit
-10 1 foo emit
-10 2 foo emit
-10 3 foo emit
-10 4 foo emit
-10 5 foo emit
-10 6 foo emit
-10 7 foo emit
-bye
-EOF
-
-preserve <<'EOF'
-: foo
-    case
-    0 of 65 endof
-    1 of 66 endof
-    2 of 67 endof
-    3 of 68 endof
-    4 of 69 endof
-    97 + dup
-    endcase
-;
-10 0 foo emit emit
-10 1 foo emit emit
-10 2 foo emit emit
-10 3 foo emit emit
-10 4 foo emit emit
-10 5 foo emit emit
-10 6 foo emit emit
-10 7 foo emit emit
-bye
-EOF
+for f in test/*.fs ; do
+    cat "$f" | preserve
+done
 
 for f in example/*.fs ; do
     cat "$f" | preserve
