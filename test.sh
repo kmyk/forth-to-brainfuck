@@ -257,131 +257,34 @@ preserve <<'EOF'
 bye
 EOF
 
-preserve <<'EOF'
-: emit-fizz 102 emit 105 emit 122 emit 122 emit ;
-: emit-buzz  98 emit 117 emit 122 emit 122 emit ;
-: fizzbuzz ( -- )
-    1 begin dup while
-        dup 15 mod 0= if
-            emit-fizz emit-buzz
-        else dup 5 mod 0= if
-            emit-buzz
-        else dup 3 mod 0= if
-            emit-fizz
-        else
-            dup .
-        then then then
-        cr
-        dup 100 = if
-            drop 0
-        else
-            1+
-        then
-    repeat
-;
-fizzbuzz
-bye
-EOF
-
-preserve <<'EOF'
-: program ( cont args... func -- result... cont )
-    begin dup while
-    \ .s 10 emit
-    dup 1 = if drop
-        swap dup 0= if
-            \ r 0 n 1 -- n+1 r
-            drop 1+ swap
-        else swap dup 0= if
-            \ r m 0 1 -- r m-1 1 1
-            drop 1- 1 1
-        else
-            \ r m n 1 -- r m-1 1 m n-1 1
-            swap dup 1- rot rot 1 swap rot 1- 1
-        then then
-    then
-    repeat drop
-;
-
-: ack ( m n -- ack )
-    0 -rot 1 program
-;
-
-2 8 ack . cr
-3 2 ack . cr
-4 0 ack . cr
-
-( : ack' { m n }
-    m 0= if
-        n 1+
-    else n 0= if
-        m 1- 1 recurse
-    else
-        m 1- m n 1- recurse recurse
-    then then
-; )
-
-bye
-EOF
-
-preserve <<'EOF'
-: program ( cont args... func -- result... cont )
-    begin dup while
-    \ .s 10 emit
-    dup 1 = if drop
-        \ dup 1 <= if
-        dup 0 = over 1 = + if
-            \ r 0 1 -- 0 r
-            \ r 1 1 -- 1 r
-            swap
-        else
-            \ r n 1 -- r n-1 2 n-2 1 -- -- r n-1 (fib n-2) 2
-            1- dup 1- 2 swap 1
-        then
-    else dup 2 = if drop
-        \ r n m 2 -- r m 3 n 1 -- -- r m (fib n) 3
-        3 rot 1
-    else 3 = if
-        \ r n m 3 -- n+m r
-        + swap
-    then then then
-    repeat drop
-;
-
-: fib ( n -- n )
-    0 swap 1 program
-;
-
-\ : fib' 0 1 rot 0 u+do .s 10 emit dup rot + loop drop ;
-
-9 fib . cr
-10 fib . cr
-11 fib . cr
-
-bye
-EOF
-
-for i in $(seq 0 127) ; do
-    assert "$i ." "$i "
+for f in example/*.fs ; do
+    cat "$f" | preserve
 done
 
-for a in $(seq 0 10) ; do
-    for b in $(seq 0 10) ; do
-        echo "$a $b + . bye" | preserve
-        echo "$a $b * . bye" | preserve
+if false ; then
+    for i in $(seq 0 127) ; do
+        assert "$i ." "$i "
     done
-done
 
-for a in $(seq 0 15) ; do
-    for b in $(seq 0 $a) ; do
-        echo "$a $b - . bye" | preserve
+    for a in $(seq 0 10) ; do
+        for b in $(seq 0 10) ; do
+            echo "$a $b + . bye" | preserve
+            echo "$a $b * . bye" | preserve
+        done
     done
-done
 
-for a in $(seq 0 15) ; do
-    for b in $(seq 1 15) ; do
-        echo "$a $b /mod . . bye" | preserve
+    for a in $(seq 0 15) ; do
+        for b in $(seq 0 $a) ; do
+            echo "$a $b - . bye" | preserve
+        done
     done
-done
+
+    for a in $(seq 0 15) ; do
+        for b in $(seq 1 15) ; do
+            echo "$a $b /mod . . bye" | preserve
+        done
+    done
+fi
 
 echo $error errors found
 exit $error
