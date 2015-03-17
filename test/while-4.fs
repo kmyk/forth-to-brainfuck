@@ -1,8 +1,7 @@
 : foo
     begin dup while
-        dup .
-        1-
+        1- dup .
     repeat
 ;
-6 7 8 foo . . .
+9 foo
 bye

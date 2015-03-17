@@ -114,7 +114,7 @@ data StackL
     | PushSpace
     | Space
     | SpaceN
-    | DupWhile [StackL]
+    | WhileF [StackL]
     | WhenL [StackL]
     | IfL [StackL] [StackL]
     | SwitchL [[StackL]] -- [0, 1, 2, .., n or more], SwitchL [ ( -- w .. ), ( -- w .. ), .., ( n -- w .. n ) ] -> ( n -- w .. )
@@ -192,7 +192,14 @@ stackl1 e = choice $ map try
         symbol "begin" >> symbol "dup" >> symbol "while"
         body <- stackl e
         symbol "repeat"
-        return [DupWhile body]
+        return [WhileL body]
+    , do
+        symbol "begin"
+        cond <- stackl e
+        symbol "while"
+        body <- stackl e
+        symbol "repeat"
+        return $ cond ++ [WhileF $ body ++ cond, Drop]
     , do
         symbol "if"
         thn <- stackl e
@@ -263,7 +270,7 @@ fromStackL = f where
         PushSpace : xs -> f $ Push (ord ' ') : xs
         Space : xs -> f $ [PushSpace, Emit] ++ xs
         SpaceN : xs -> readBrainfuck (">" ++ replicate (ord ' ') '+' ++ "<[>.<-]>[-]<<") ++ f xs
-        DupWhile body : xs -> f $ WhileL body : xs
+        WhileF body : xs -> f $ WhileL (Drop : body) : xs
         WhenL body   : xs -> ifL body [] ++ f xs
         IfL thn els  : xs -> ifL thn els ++ f xs
         SwitchL cs : xs -> switchL cs ++ f xs
