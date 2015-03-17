@@ -47,12 +47,12 @@ translate () {
     brainfuck <(runghc ForthToBrainfuck.hs)
 }
 
-error=0
+error=$(mktemp)
 
 assert () {
     echo assert \'"$1"\' \'"$2"\'
     if echo "$1" | translate | diff - <(echo -n "$2") ; then : ; else
-        error=$(($error+1))
+        echo assert \'"$1"\' \'"$2"\' >> $error
     fi
     echo
 }
@@ -67,7 +67,7 @@ preserve () {
     cat $f
     echo EOF
     if cat $f | translate | diff - <(gforth $f) ; then : ; else
-        error=$(($error+1))
+        echo preserve $f >> $error
     fi
     rm $f
     echo
@@ -148,5 +148,8 @@ if false ; then
     done
 fi
 
-echo $error errors found
-exit $error
+returncode=$(cat $error | wc -l)
+echo $(cat $error | wc -l) errors found
+cat $error
+rm $error
+exit $returncode
