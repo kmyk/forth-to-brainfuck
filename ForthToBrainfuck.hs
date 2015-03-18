@@ -53,6 +53,7 @@ data Brainfuck
     | Read
     | Write
     | While [Brainfuck]
+    | Raw String
     deriving (Eq, Ord, Show, Read)
 
 newtype Brainfuck' = Brainfuck' [Brainfuck]
@@ -69,6 +70,7 @@ instance Show Brainfuck' where
             Read  : xs -> ',' : f xs
             Write : xs -> '.' : f xs
             While body : xs -> "[" ++  f body ++ "]" ++ f xs
+            Raw s : xs -> s ++ f xs
 instance Read Brainfuck' where
     readsPrec _ = map (first Brainfuck') . f where
         f ('+' : xs) = Incr  <:> f xs
@@ -135,6 +137,7 @@ data StackL
     | WhenL [StackL]
     | IfL [StackL] [StackL]
     | SwitchL [[StackL]] -- [0, 1, 2, .., n or more], SwitchL [ ( -- w .. ), ( -- w .. ), .., ( n -- w .. n ) ] -> ( n -- w .. )
+    | RawL String
     deriving (Eq, Ord, Show, Read)
 
 stacklTopLevel :: Stream s m Char => ParsecT s u m [StackL]
@@ -258,6 +261,11 @@ stackl1 e = choice $ map try
         symbol "endcase"
         return [SwitchL cass']
     , do
+        symbol "s`"
+        void anyChar
+        s <- manyTill anyChar (char '`')
+        return [RawL s]
+    , do
         a <- anySymbol
         case M.lookup a e of
             Just b -> return b
@@ -315,6 +323,7 @@ fromStackL = f where
         WhenL body   : xs -> ifL body [] ++ f xs
         IfL thn els  : xs -> ifL thn els ++ f xs
         SwitchL cs : xs -> switchL cs ++ f xs
+        RawL s : xs -> Raw s : f xs
 
 
 divmod :: [Brainfuck]
