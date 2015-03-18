@@ -9,6 +9,7 @@ import Data.Char (ord, isDigit, isSpace)
 import Data.Either.Extra
 import qualified Data.Map as M
 import Data.Function
+import Data.List
 import System.IO
 import Text.Parsec as P
 
@@ -29,6 +30,20 @@ symbol :: Stream s m Char => String -> ParsecT s u m ()
 symbol s = do
     t <- anySymbol
     when (t /= s) (unexpected $ "symbol " ++ show t)
+
+natural :: Stream s m Char => ParsecT s u m Int
+natural = do
+    s <- anySymbol
+    if all isDigit s
+        then return $ read s
+        else parserZero
+
+interger :: Stream s m Char => ParsecT s u m Int
+interger = do
+    s <- anySymbol
+    if all isDigit s || (not (null $ tail s) && head s == '-' && all isDigit (tail s))
+        then return $ read s
+        else parserZero
 
 data Brainfuck
     = Incr
@@ -183,19 +198,15 @@ tillFail (x : xs) = try ((:) <$> x <*> tillFail xs) P.<|> return []
 stackl1 :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
 stackl1 e = choice $ map try
     [ do
-        n <- anySymbol
-        unless (all isDigit n)
-            parserZero
+        n <- natural
         f <- choice $ map try
             [ symbol "pick" >> return Pick
             , symbol "roll" >> return Roll
             ]
-        return [f $ read n]
+        return [f n]
     , do
-        n <- anySymbol
-        if all isDigit n || (not (null $ tail n) && head n == '-' && all isDigit (tail n))
-            then return [Push $ read n]
-            else parserZero
+        n <- interger
+        return [Push n]
     , do
         s <- symbol "char" >> anySymbol
         return [Push (ord $ head s)]
@@ -225,10 +236,27 @@ stackl1 e = choice $ map try
         return [WhenL body]
     , do
         symbol "case"
-        cass <- tillFail $ map (\ i -> try $ symbol (show i) >> symbol "of" >> stackl e <* symbol "endof") [0x00 .. 0xff :: Int]
+        let recur acc = choice
+                [ do
+                    acc' <- try $ do
+                        n <- natural
+                        when (256 <= n) parserZero
+                        when (n `M.member` acc) parserZero
+                        symbol "of"
+                        body <- stackl e
+                        symbol "endof"
+                        return $ M.insert n body acc
+                    recur acc'
+                , return acc
+                ]
+        cass <- recur M.empty
         def <- stackl e
+        let maxof = maximum (M.keys cass)
+        let def'  = M.fromList (map (\ i -> (i, [Push i] ++ def ++ [Drop])) [0 .. maxof])
+        let def'' = M.insert (maxof + 1) def def'
+        let cass' = map snd . sortBy (compare `on` fst) . M.toList $ cass `M.union` def''
         symbol "endcase"
-        return [SwitchL $ cass ++ [def]]
+        return [SwitchL cass']
     , do
         a <- anySymbol
         case M.lookup a e of
