@@ -386,17 +386,7 @@ printL = unsafeForthToBrainfuck $ unlines
         , "space"
         ]
 
-geL :: [Brainfuck]
-geL = unsafeForthToBrainfuck $ unlines
-    [ "over over <> if"
-    , "    >"
-    , "else"
-    , "    -1"
-    , "then"
-    ]
-leL :: [Brainfuck]
-leL = unsafeForthToBrainfuck "swap >="
-gtL :: [Brainfuck]
+gtL :: [Brainfuck] -- !!max(a-b,0)
 gtL = unsafeForthToBrainfuck $ unlines
     [ "begin dup while"
     , "    over"
@@ -408,6 +398,10 @@ gtL = unsafeForthToBrainfuck $ unlines
     , "drop"
     , "0<>"
     ]
+geL :: [Brainfuck]
+geL = unsafeForthToBrainfuck "swap <="
+leL :: [Brainfuck]
+leL = unsafeForthToBrainfuck "> 0="
 ltL :: [Brainfuck]
 ltL = unsafeForthToBrainfuck "swap >"
 
