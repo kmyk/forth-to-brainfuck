@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Main where
 
-import Control.Applicative
+import Control.Applicative hiding ((<|>))
 import Control.Arrow
 import Control.Monad
 import Data.Char (ord, isDigit, isSpace)
@@ -122,13 +122,8 @@ data StackL
     | OneF
     | EqF
     | NeF
-    | LeF
-    | LtF
-    | GeF
-    | GtF
     | Emit
     | Key
-    | Print
     | Newline
     | PushSpace
     | Space
@@ -140,56 +135,114 @@ data StackL
     | RawL String
     deriving (Eq, Ord, Show, Read)
 
-stacklTopLevel :: Stream s m Char => ParsecT s u m [StackL]
-stacklTopLevel = stacklTopLevel' $ M.fromList
-    [ (,) "1+"     [IncrL]
-    , (,) "1-"     [DecrL]
-    , (,) "emit"   [Emit]
-    , (,) "key"    [Key]
-    , (,) "dup"    [Dup]
-    , (,) "drop"   [Drop]
-    , (,) "nip"    [Nip]
-    , (,) "over"   [Over]
-    , (,) "tuck"   [Tuck]
-    , (,) "swap"   [Swap]
-    , (,) "rot"    [Rot]
-    , (,) "-rot"   [NotRot]
-    , (,) "+"      [Plus]
-    , (,) "-"      [Minus]
-    , (,) "*"      [Mult]
-    , (,) "/"      [Div]
-    , (,) "mod"    [Mod]
-    , (,) "/mod"   [DivMod]
-    , (,) "max"    [Max]
-    , (,) "min"    [Min]
-    , (,) "="      [EqF]
-    , (,) "<>"     [NeF]
-    , (,) "<="     [LeF]
-    , (,) "<"      [LtF]
-    , (,) ">="     [GeF]
-    , (,) ">"      [GtF]
-    , (,) "0="     [NotF]
-    , (,) "0<>"    [OneF]
-    , (,) "."      [Print]
-    , (,) "cr"     [Newline]
-    , (,) "bl"     [PushSpace]
-    , (,) "space"  [Space]
-    , (,) "spaces" [SpaceN]
+defaultEnviron :: M.Map String [StackL]
+defaultEnviron = fromRight $ parse (manyf stacklFuncDef primitives) "*stdlib*" stdlib where
+    manyf :: Stream s m t => (a -> ParsecT s u m a) -> a -> ParsecT s u m a
+    manyf f x = (f x >>= manyf f) <|> return x
+    primitives = M.fromList
+        [ (,) "1+"     [IncrL]
+        , (,) "1-"     [DecrL]
+        , (,) "emit"   [Emit]
+        , (,) "key"    [Key]
+        , (,) "dup"    [Dup]
+        , (,) "drop"   [Drop]
+        , (,) "nip"    [Nip]
+        , (,) "over"   [Over]
+        , (,) "tuck"   [Tuck]
+        , (,) "swap"   [Swap]
+        , (,) "rot"    [Rot]
+        , (,) "-rot"   [NotRot]
+        , (,) "+"      [Plus]
+        , (,) "-"      [Minus]
+        , (,) "*"      [Mult]
+        , (,) "/"      [Div]
+        , (,) "mod"    [Mod]
+        , (,) "/mod"   [DivMod]
+        , (,) "max"    [Max]
+        , (,) "min"    [Min]
+        , (,) "="      [EqF]
+        , (,) "<>"     [NeF]
+        , (,) "0="     [NotF]
+        , (,) "0<>"    [OneF]
+        , (,) "cr"     [Newline]
+        , (,) "bl"     [PushSpace]
+        , (,) "space"  [Space]
+        , (,) "spaces" [SpaceN]
+        ]
+
+    stdlib = unlines
+        [ dot
+        , gt
+        , lt -- depends on gt
+        , le -- depends on gt
+        , ge -- depends on le
+        ]
+
+    dot = unlines
+        [ ": . ( n -- )"
+        , "    100 /mod"
+        , "    dup if"
+        , "        48 + emit"
+        , "        1"
+        , "    else"
+        , "        drop"
+        , "        0"
+        , "    then"
+        , "    swap"
+        , "    10 /mod"
+        , "    dup if"
+        , "        48 + emit"
+        , "        nip"
+        , "    else"
+        , "        drop"
+        , "        swap if"
+        , "            48 emit"
+        , "        then"
+        , "    then"
+        , "    48 + emit"
+        , "    space"
+        , ";"
+        ]
+
+    gt = unlines
+        [ ": > ( a b -- bool )"
+        , "    begin dup while"
+        , "        over"
+        , "        if"
+        , "            swap 1- swap"
+        , "        then"
+        , "        1-"
+        , "    repeat"
+        , "    drop"
+        , "    0<>"
+        , ";"
+        ]
+    lt = unlines [": <  ( a b -- bool )", "    swap >",  ";"]
+    le = unlines [": <= ( a b -- bool )", "    > 0=",    ";"]
+    ge = unlines [": >= ( a b -- bool )", "    swap <=", ";"]
+
+stacklProgram :: Stream s m Char => ParsecT s u m [StackL]
+stacklProgram = stacklProgram' defaultEnviron
+
+stacklProgram' :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
+stacklProgram' e = choice
+    [ stacklFuncDef e >>= stacklProgram'
+    , stacklTopLevel e
     ]
 
-stacklTopLevel' :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
-stacklTopLevel' e = choice $ map try
-    [ do
-        a <- symbol ":" >> anySymbol
-        prog <- stackl e
-        symbol ";"
-        stacklTopLevel' (M.insert a prog e)
-    , do
-        prog <- stackl e
-        P.optional (symbol "bye")
-        delimiters >> eof
-        return prog
-    ]
+stacklFuncDef :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m (M.Map String [StackL])
+stacklFuncDef e = try $ do
+    a <- symbol ":" >> anySymbol
+    prog <- stackl e
+    symbol ";"
+    return $ M.insert a prog e
+
+stacklTopLevel :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
+stacklTopLevel e = try $ do
+    prog <- stackl e
+    P.optional (symbol "bye")
+    delimiters >> eof
+    return prog
 
 stackl :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
 stackl e = concat <$> P.many (try $ stackl1 e)
@@ -308,13 +361,8 @@ fromStackL = f where
         OneF : xs -> readBrainfuck    "[>-<[-]]>[<->+]<" ++ f xs
         EqF : xs -> f $ Minus : NotF : xs
         NeF : xs -> f $ Minus : OneF : xs
-        LeF : xs -> leL ++ f xs
-        LtF : xs -> ltL ++ f xs
-        GeF : xs -> geL ++ f xs
-        GtF : xs -> gtL ++ f xs
         Emit : xs -> f $ WriteL : Drop  : xs
         Key  : xs -> f $ Push 0 : ReadL : xs
-        Print : xs -> printL ++ f xs
         Newline : xs -> f $ newlineL ++ xs
         PushSpace : xs -> f $ Push (ord ' ') : xs
         Space : xs -> f $ [PushSpace, Emit] ++ xs
@@ -365,54 +413,9 @@ newlineL = case nativeNewline of
     CRLF -> [Push $ ord '\r', Emit, Push $ ord '\n', Emit]
 
 forthToBrainfuck :: String -> Either ParseError [Brainfuck]
-forthToBrainfuck code = fromStackL <$> parse stacklTopLevel "" code
+forthToBrainfuck code = fromStackL <$> parse stacklProgram "" code
 unsafeForthToBrainfuck :: String -> [Brainfuck]
 unsafeForthToBrainfuck = fromRight . forthToBrainfuck
-
--- ( n -- ) now in brainfuck, print n%128
-printL :: [Brainfuck]
-printL = unsafeForthToBrainfuck $ unlines
-        [ "100 /mod"
-        , "dup if"
-        , "    48 + emit"
-        , "    1"
-        , "else"
-        , "    drop"
-        , "    0"
-        , "then"
-        , "swap"
-        , "10 /mod"
-        , "dup if"
-        , "    48 + emit"
-        , "    nip"
-        , "else"
-        , "    drop"
-        , "    swap if"
-        , "        48 emit"
-        , "    then"
-        , "then"
-        , "48 + emit"
-        , "space"
-        ]
-
-gtL :: [Brainfuck] -- !!max(a-b,0)
-gtL = unsafeForthToBrainfuck $ unlines
-    [ "begin dup while"
-    , "    over"
-    , "    if"
-    , "        swap 1- swap"
-    , "    then"
-    , "    1-"
-    , "repeat"
-    , "drop"
-    , "0<>"
-    ]
-geL :: [Brainfuck]
-geL = unsafeForthToBrainfuck "swap <="
-leL :: [Brainfuck]
-leL = unsafeForthToBrainfuck "> 0="
-ltL :: [Brainfuck]
-ltL = unsafeForthToBrainfuck "swap >"
 
 pickL :: Int -> [Brainfuck]
 pickL n = readBrainfuck $ concat
@@ -437,6 +440,6 @@ rollL n = readBrainfuck $ concat
 main :: IO ()
 main = do
     file <- getContents
-    case parse stacklTopLevel "*stdin*" file of
+    case parse stacklProgram "*stdin*" file of
         Right result -> putStrLn . showBrainfuck . fromStackL $ result
         Left  result -> error $ show result
