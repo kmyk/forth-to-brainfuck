@@ -1,11 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <assert.h>
 char *code;
 char *pptr;
 int len;
-char mem[30000] = {};
-char *ptr = mem;
+uint8_t mem[30000] = {};
+uint8_t *ptr = mem;
 void skip(void) {
     while (pptr < code+len) {
         switch (*(pptr++)) {
@@ -42,6 +43,8 @@ void read(char *path) {
             code = (char*)realloc(code, n);
         }
     }
+    assert (code[i] == EOF);
+    code[i] = -1; // EOF is -1
     len = i;
     pptr = code;
     fclose(fh);
