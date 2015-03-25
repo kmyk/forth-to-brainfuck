@@ -10,6 +10,10 @@ import Data.Either.Extra
 import qualified Data.Map as M
 import Data.Function
 import Data.List
+import Data.Maybe
+import System.Console.GetOpt
+import System.Environment
+import System.Exit
 import System.IO
 import Text.Parsec as P
 
@@ -437,9 +441,38 @@ rollL n = readBrainfuck $ concat
         nnext = replicate n '>'
         nprev = replicate n '<'
 
+data Flag
+    = Eval String
+    deriving (Eq, Ord, Show, Read)
+
+header :: String -> String
+header progName = progName
+
+options :: [OptDescr Flag]
+options =
+    [ Option "e" ["eval"] (ReqArg Eval "CODE") ""
+    ]
+
+fromEval :: Flag -> Maybe String
+fromEval (Eval s) = Just s
+-- fromEval _ = Nothing
+
 main :: IO ()
 main = do
-    file <- getContents
-    case parse stacklProgram "*stdin*" file of
-        Right result -> putStrLn . showBrainfuck . fromStackL $ result
-        Left  result -> error $ show result
+    progName <- getProgName
+    args <- getArgs
+    case getOpt Permute options args of
+        (flags, [], []) -> do
+            (name, code) <- case mapMaybe fromEval flags of
+                [] -> (,) "*stdin*" <$> getContents
+                codes -> return $ (,) "*args*" (unlines codes)
+            case parse stacklProgram name code of
+                Right result -> putStrLn . showBrainfuck . fromStackL $ result
+                Left  result -> error $ show result
+        (_, _, []) -> do
+            putStr $ usageInfo (header progName) options
+            exitFailure
+        (_, _, errs) -> do
+            putStr $ concat errs
+            putStr $ usageInfo (header progName) options
+            exitFailure
