@@ -6,8 +6,8 @@ import Control.Applicative hiding ((<|>))
 import Control.Arrow
 import Control.Monad
 import Data.Char (ord, isDigit, isSpace)
-import Data.Either.Extra
 import qualified Data.Map as M
+import Data.Functor.Identity (Identity)
 import Data.Function
 import Data.List
 import Data.Maybe
@@ -94,88 +94,21 @@ readBrainfuck = unBrainfuck' . read
 showBrainfuck :: [Brainfuck] -> String
 showBrainfuck = show . Brainfuck'
 
+dropL :: StackL
+dropL = RawL "[-]<"
+
 data StackL
     = Push Int
-    | IncrL
-    | DecrL
     | ReadL
     | WriteL
     | WhileL [StackL] -- not consume top
-    | Dup
-    | Drop
-    | Nip
-    | Over
-    | Tuck
-    | Swap
-    | Rot
-    | NotRot
     | Pick Int
     | Roll Int
-    | Clear
-    | Add Int
-    | Sub Int
-    | Plus
-    | Minus
-    | Mult
-    | Div
-    | Mod
-    | DivMod
-    | Max
-    | Min
-    | NotF -- returns -1 as true
-    | OneF
-    | EqF
-    | NeF
-    | Emit
-    | Key
-    | Newline
-    | PushSpace
-    | Space
-    | SpaceN
-    | WhileF [StackL]
     | WhenL [StackL]
     | IfL [StackL] [StackL]
     | SwitchL [[StackL]] -- [0, 1, 2, .., n or more], SwitchL [ ( -- w .. ), ( -- w .. ), .., ( n -- w .. n ) ] -> ( n -- w .. )
     | RawL String
     deriving (Eq, Ord, Show, Read)
-
-primitives :: M.Map String [StackL]
-primitives = M.fromList
-    [ (,) "1+"     [IncrL]
-    , (,) "1-"     [DecrL]
-    , (,) "emit"   [Emit]
-    , (,) "key"    [Key]
-    , (,) "dup"    [Dup]
-    , (,) "drop"   [Drop]
-    , (,) "nip"    [Nip]
-    , (,) "over"   [Over]
-    , (,) "tuck"   [Tuck]
-    , (,) "swap"   [Swap]
-    , (,) "rot"    [Rot]
-    , (,) "-rot"   [NotRot]
-    , (,) "+"      [Plus]
-    , (,) "-"      [Minus]
-    , (,) "*"      [Mult]
-    , (,) "/"      [Div]
-    , (,) "mod"    [Mod]
-    , (,) "/mod"   [DivMod]
-    , (,) "max"    [Max]
-    , (,) "min"    [Min]
-    , (,) "="      [EqF]
-    , (,) "<>"     [NeF]
-    , (,) "0="     [NotF]
-    , (,) "0<>"    [OneF]
-    , (,) "cr"     [Newline]
-    , (,) "bl"     [PushSpace]
-    , (,) "space"  [Space]
-    , (,) "spaces" [SpaceN]
-    ]
-
-manyf :: Stream s m t => (a -> ParsecT s u m a) -> a -> ParsecT s u m a
-manyf f x = (f x >>= manyf f) <|> return x
-
-loadLibrary :: String -> M.Map String [StackL] -> M.Map String [StackL]
-loadLibrary s e = fromRight $ parse (manyf stacklFuncDef e) "*library*" s
 
 stacklProgram :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
 stacklProgram e = choice
@@ -190,6 +123,12 @@ stacklFuncDef e = try $ do
     symbol ";"
     return $ M.insert a prog e
 
+manyf :: Stream s m t => (a -> ParsecT s u m a) -> a -> ParsecT s u m a
+manyf f x = (f x >>= manyf f) <|> return x
+
+stacklLibrary :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m (M.Map String [StackL])
+stacklLibrary e = manyf stacklFuncDef e <* delimiters <* eof
+
 stacklTopLevel :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
 stacklTopLevel e = try $ do
     prog <- stackl e
@@ -199,10 +138,6 @@ stacklTopLevel e = try $ do
 
 stackl :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
 stackl e = concat <$> P.many (try $ stackl1 e)
-
-tillFail :: Stream s m t => [ParsecT s u m a] -> ParsecT s u m [a]
-tillFail [] = return []
-tillFail (x : xs) = try ((:) <$> x <*> tillFail xs) P.<|> return []
 
 stackl1 :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
 stackl1 e = choice $ map try
@@ -230,7 +165,7 @@ stackl1 e = choice $ map try
         symbol "while"
         body <- stackl e
         symbol "repeat"
-        return $ cond ++ [WhileF $ body ++ cond, Drop]
+        return $ cond ++ [WhileL $ dropL : body ++ cond, dropL]
     , do
         symbol "if"
         thn <- stackl e
@@ -261,7 +196,7 @@ stackl1 e = choice $ map try
         cass <- recur M.empty
         def <- stackl e
         let maxof = maximum (M.keys cass)
-        let def'  = M.fromList (map (\ i -> (i, [Push i] ++ def ++ [Drop])) [0 .. maxof])
+        let def'  = M.fromList (map (\ i -> (i, [Push i] ++ def ++ [dropL])) [0 .. maxof])
         let def'' = M.insert (maxof + 1) def def'
         let cass' = map snd . sortBy (compare `on` fst) . M.toList $ cass `M.union` def''
         symbol "endcase"
@@ -283,61 +218,16 @@ fromStackL = f where
     f = \ case
         [] -> []
         Push n : xs -> Next : replicate (n `mod` 0x100) Incr ++ f xs
-        IncrL  : xs -> Incr  : f xs
-        DecrL  : xs -> Decr  : f xs
         ReadL  : xs -> Read  : f xs
         WriteL : xs -> Write : f xs
         WhileL body : xs -> While (f body) : f xs
-        Dup  : xs -> readBrainfuck "[>+>+<<-]>>[<<+>>-]<" ++ f xs
-        Drop : xs -> readBrainfuck "[-]<" ++ f xs
-        Nip  : xs -> readBrainfuck "<[-]>[<+>-]<" ++ f xs
-        Over : xs -> readBrainfuck "<[>>+>+<<<-]>>>[<<<+>>>-]<" ++ f xs
-        Tuck : xs -> readBrainfuck "[>+>+<<-]<[>+<-]>>>[<<<+>>>-]<" ++ f xs
-        Swap : xs -> readBrainfuck "[>+<-]<[>+<-]>>[<<+>>-]<" ++ f xs
-        Rot    : xs -> readBrainfuck "<<[>>>+<<<-]>[<+>-]>[<+>-]>[<+>-]<" ++ f xs
-        NotRot : xs -> readBrainfuck "[>+<-]<[>+<-]<[>+<-]>>>[<<<+>>>-]<" ++ f xs
         Pick n : xs -> pickL n ++ f xs
         Roll n : xs -> rollL n ++ f xs
-        Clear : xs -> While [Decr] : f xs
-        Add n : xs -> replicate n Incr ++ f xs
-        Sub n : xs -> replicate n Decr ++ f xs
-        Plus  : xs -> readBrainfuck "[<+>-]<" ++ f xs
-        Minus : xs -> readBrainfuck "[<->-]<" ++ f xs
-        Mult  : xs -> readBrainfuck "<[>[>+>+<<-]>>[<<+>>-]<<<-]>[-]>[<<+>>-]<<" ++ f xs
-        Div : xs -> f $ DivMod : Nip  : xs
-        Mod : xs -> f $ DivMod : Drop : xs
-        DivMod : xs -> divmod ++ f xs
-        -- http://sampi.hatenablog.com/entry/2013/09/28/115426
-        Max : xs -> readBrainfuck "[>>+<<-]>+>>>+>>++[<<<<<<<-[>]>>>>>>>-<<<<<<[<]>>-[>]>>>>-<<<[<]>>+>]>[-]<<<-<<[-]<-<<[-]>>>>>>[<<<<<<+>>>>>>-]<<<<<<" ++ f xs
-        Min : xs -> readBrainfuck "[>>+<<-]>+>>>+>>+[<<<<<<<-[>]>>>>>>>[-]<<<<<<[<]>>-[>]>>>>[-]<<<[<]>>+>]<<-<<[-]<->>>>[<<<<<<+>>>>>>-]<<<<<<" ++ f xs
-        NotF : xs -> readBrainfuck ">-<[>+<[-]]>[<->+]<" ++ f xs
-        OneF : xs -> readBrainfuck    "[>-<[-]]>[<->+]<" ++ f xs
-        EqF : xs -> f $ Minus : NotF : xs
-        NeF : xs -> f $ Minus : OneF : xs
-        Emit : xs -> f $ WriteL : Drop  : xs
-        Key  : xs -> f $ Push 0 : ReadL : xs
-        Newline : xs -> f $ newlineL ++ xs
-        PushSpace : xs -> f $ Push (ord ' ') : xs
-        Space : xs -> f $ [PushSpace, Emit] ++ xs
-        SpaceN : xs -> readBrainfuck (">" ++ replicate (ord ' ') '+' ++ "<[>.<-]>[-]<<") ++ f xs
-        WhileF body : xs -> f $ WhileL (Drop : body) : xs
         WhenL body   : xs -> ifL body [] ++ f xs
         IfL thn els  : xs -> ifL thn els ++ f xs
         SwitchL cs : xs -> switchL cs ++ f xs
         RawL s : xs -> Raw s : f xs
 
-
-divmod :: [Brainfuck]
-divmod = concat a where
-    -- http://sampi.hatenablog.com/entry/2013/10/01/001136
-    b = readBrainfuck "[>>+<<-]>+>>>>>+[<<<<[->+>+<<]>[-<+>]>[-<<<<<-[>]>>>>>>>-<<<<<<[<]>>>>]>+>]<<<<<<<[>]>[>[-<<<+>>>]>>>-<<<<<]>->[-]>>>>>[-]<<[<<<<<+>>>>>-]<<<<<"
-    a = -- *workaround* when numerator is 0
-        [ f Over
-        , ifL'
-            b
-            (f Clear)
-        ]
-    f = fromStackL . (: [])
 
 -- if you write 1st-argument-only version, it will be very similar to this without some "<>" or "><"
 ifL' :: [Brainfuck] -> [Brainfuck] -> [Brainfuck]
@@ -354,16 +244,11 @@ ifL = ifL' `on` fromStackL
 -- TODO: fix
 switchL :: [[StackL]] -> [Brainfuck]
 switchL = readBrainfuck . f 0 where
-    f _ [] = g [Drop]
+    f _ [] = g [dropL]
     f 0 (x : xs) = concat [">+<",  f 1 xs,   ">[-<<",                 g x, ">>]<", "<"]
     f n [x]      = concat ["[-",             ">[-<", replicate n '+', g x,  ">]<", "]"]
     f n (x : xs) = concat ["[-", f (n+1) xs, ">[-<<",                 g x, ">>]<", "]"]
     g = showBrainfuck . fromStackL
-
-newlineL :: [StackL]
-newlineL = case nativeNewline of
-    LF   -> [Push $ ord '\n', Emit]
-    CRLF -> [Push $ ord '\r', Emit, Push $ ord '\n', Emit]
 
 pickL :: Int -> [Brainfuck]
 pickL n = readBrainfuck $ concat
@@ -417,23 +302,32 @@ fromHead :: a -> [a] -> a
 fromHead x [] = x
 fromHead _ (x : _) = x
 
+parseIO :: Stream s Identity t => Parsec s () a -> SourceName -> s -> IO a
+parseIO a b c = case parse a b c of
+    Right result -> return result
+    Left  result -> error $ show result
+
+printUsage :: IO ()
+printUsage = do
+    progName <- getProgName
+    putStr $ usageInfo (header progName) options
+
 main :: IO ()
 main = do
-    progName <- getProgName
     args <- getArgs
     case getOpt Permute options args of
         (flags, [], []) -> do
             (name, code) <- case mapMaybe fromEval flags of
                 [] -> (,) "*stdin*" <$> getContents
                 codes -> return $ (,) "*args*" (unlines codes)
-            stdlib <- readFile' $ fromHead "stdlib.fs" $ reverse $ mapMaybe fromStdlib flags
-            case parse (stacklProgram (loadLibrary stdlib primitives)) name code of
-                Right result -> putStrLn . showBrainfuck . fromStackL $ result
-                Left  result -> error $ show result
+            libfile <- readFile' . fromHead "library.fs" . reverse $ mapMaybe fromStdlib flags
+            libobj <- parseIO (stacklLibrary M.empty) "*library*" libfile
+            result <- parseIO (stacklProgram libobj) name code
+            putStrLn . showBrainfuck $ fromStackL result
         (_, _, []) -> do
-            putStr $ usageInfo (header progName) options
+            printUsage
             exitFailure
         (_, _, errs) -> do
             putStr $ concat errs
-            putStr $ usageInfo (header progName) options
+            printUsage
             exitFailure
