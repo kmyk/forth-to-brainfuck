@@ -139,98 +139,47 @@ data StackL
     | RawL String
     deriving (Eq, Ord, Show, Read)
 
-defaultEnviron :: M.Map String [StackL]
-defaultEnviron = fromRight $ parse (manyf stacklFuncDef primitives) "*stdlib*" stdlib where
-    manyf :: Stream s m t => (a -> ParsecT s u m a) -> a -> ParsecT s u m a
-    manyf f x = (f x >>= manyf f) <|> return x
-    primitives = M.fromList
-        [ (,) "1+"     [IncrL]
-        , (,) "1-"     [DecrL]
-        , (,) "emit"   [Emit]
-        , (,) "key"    [Key]
-        , (,) "dup"    [Dup]
-        , (,) "drop"   [Drop]
-        , (,) "nip"    [Nip]
-        , (,) "over"   [Over]
-        , (,) "tuck"   [Tuck]
-        , (,) "swap"   [Swap]
-        , (,) "rot"    [Rot]
-        , (,) "-rot"   [NotRot]
-        , (,) "+"      [Plus]
-        , (,) "-"      [Minus]
-        , (,) "*"      [Mult]
-        , (,) "/"      [Div]
-        , (,) "mod"    [Mod]
-        , (,) "/mod"   [DivMod]
-        , (,) "max"    [Max]
-        , (,) "min"    [Min]
-        , (,) "="      [EqF]
-        , (,) "<>"     [NeF]
-        , (,) "0="     [NotF]
-        , (,) "0<>"    [OneF]
-        , (,) "cr"     [Newline]
-        , (,) "bl"     [PushSpace]
-        , (,) "space"  [Space]
-        , (,) "spaces" [SpaceN]
-        ]
+primitives :: M.Map String [StackL]
+primitives = M.fromList
+    [ (,) "1+"     [IncrL]
+    , (,) "1-"     [DecrL]
+    , (,) "emit"   [Emit]
+    , (,) "key"    [Key]
+    , (,) "dup"    [Dup]
+    , (,) "drop"   [Drop]
+    , (,) "nip"    [Nip]
+    , (,) "over"   [Over]
+    , (,) "tuck"   [Tuck]
+    , (,) "swap"   [Swap]
+    , (,) "rot"    [Rot]
+    , (,) "-rot"   [NotRot]
+    , (,) "+"      [Plus]
+    , (,) "-"      [Minus]
+    , (,) "*"      [Mult]
+    , (,) "/"      [Div]
+    , (,) "mod"    [Mod]
+    , (,) "/mod"   [DivMod]
+    , (,) "max"    [Max]
+    , (,) "min"    [Min]
+    , (,) "="      [EqF]
+    , (,) "<>"     [NeF]
+    , (,) "0="     [NotF]
+    , (,) "0<>"    [OneF]
+    , (,) "cr"     [Newline]
+    , (,) "bl"     [PushSpace]
+    , (,) "space"  [Space]
+    , (,) "spaces" [SpaceN]
+    ]
 
-    stdlib = unlines
-        [ dot
-        , gt
-        , lt -- depends on gt
-        , le -- depends on gt
-        , ge -- depends on le
-        ]
+manyf :: Stream s m t => (a -> ParsecT s u m a) -> a -> ParsecT s u m a
+manyf f x = (f x >>= manyf f) <|> return x
 
-    dot = unlines
-        [ ": . ( n -- )"
-        , "    100 /mod"
-        , "    dup if"
-        , "        48 + emit"
-        , "        1"
-        , "    else"
-        , "        drop"
-        , "        0"
-        , "    then"
-        , "    swap"
-        , "    10 /mod"
-        , "    dup if"
-        , "        48 + emit"
-        , "        nip"
-        , "    else"
-        , "        drop"
-        , "        swap if"
-        , "            48 emit"
-        , "        then"
-        , "    then"
-        , "    48 + emit"
-        , "    space"
-        , ";"
-        ]
+loadLibrary :: String -> M.Map String [StackL] -> M.Map String [StackL]
+loadLibrary s e = fromRight $ parse (manyf stacklFuncDef e) "*library*" s
 
-    gt = unlines
-        [ ": > ( a b -- bool )"
-        , "    begin dup while"
-        , "        over"
-        , "        if"
-        , "            swap 1- swap"
-        , "        then"
-        , "        1-"
-        , "    repeat"
-        , "    drop"
-        , "    0<>"
-        , ";"
-        ]
-    lt = unlines [": <  ( a b -- bool )", "    swap >",  ";"]
-    le = unlines [": <= ( a b -- bool )", "    > 0=",    ";"]
-    ge = unlines [": >= ( a b -- bool )", "    swap <=", ";"]
-
-stacklProgram :: Stream s m Char => ParsecT s u m [StackL]
-stacklProgram = stacklProgram' defaultEnviron
-
-stacklProgram' :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
-stacklProgram' e = choice
-    [ stacklFuncDef e >>= stacklProgram'
+stacklProgram :: Stream s m Char => M.Map String [StackL] -> ParsecT s u m [StackL]
+stacklProgram e = choice
+    [ stacklFuncDef e >>= stacklProgram
     , stacklTopLevel e
     ]
 
@@ -416,11 +365,6 @@ newlineL = case nativeNewline of
     LF   -> [Push $ ord '\n', Emit]
     CRLF -> [Push $ ord '\r', Emit, Push $ ord '\n', Emit]
 
-forthToBrainfuck :: String -> Either ParseError [Brainfuck]
-forthToBrainfuck code = fromStackL <$> parse stacklProgram "" code
-unsafeForthToBrainfuck :: String -> [Brainfuck]
-unsafeForthToBrainfuck = fromRight . forthToBrainfuck
-
 pickL :: Int -> [Brainfuck]
 pickL n = readBrainfuck $ concat
     [ nprev
@@ -443,6 +387,7 @@ rollL n = readBrainfuck $ concat
 
 data Flag
     = Eval String
+    | Stdlib FilePath
     deriving (Eq, Ord, Show, Read)
 
 header :: String -> String
@@ -451,11 +396,26 @@ header progName = progName
 options :: [OptDescr Flag]
 options =
     [ Option "e" ["eval"] (ReqArg Eval "CODE") ""
+    , Option [] ["stdlib"] (ReqArg Stdlib "PATH") ""
     ]
 
 fromEval :: Flag -> Maybe String
 fromEval (Eval s) = Just s
--- fromEval _ = Nothing
+fromEval _ = Nothing
+
+fromStdlib :: Flag -> Maybe FilePath
+fromStdlib (Stdlib s) = Just s
+fromStdlib _ = Nothing
+
+readFile' :: FilePath -> IO String
+readFile' path =
+    withFile path ReadMode $ \ fh -> do
+        s <- hGetContents fh
+        seq (length s) (return s)
+
+fromHead :: a -> [a] -> a
+fromHead x [] = x
+fromHead _ (x : _) = x
 
 main :: IO ()
 main = do
@@ -466,7 +426,8 @@ main = do
             (name, code) <- case mapMaybe fromEval flags of
                 [] -> (,) "*stdin*" <$> getContents
                 codes -> return $ (,) "*args*" (unlines codes)
-            case parse stacklProgram name code of
+            stdlib <- readFile' $ fromHead "stdlib.fs" $ reverse $ mapMaybe fromStdlib flags
+            case parse (stacklProgram (loadLibrary stdlib primitives)) name code of
                 Right result -> putStrLn . showBrainfuck . fromStackL $ result
                 Left  result -> error $ show result
         (_, _, []) -> do
