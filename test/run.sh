@@ -1,12 +1,14 @@
 #!/usr/bin/bash
 
+simple=t
+if [ "$simple" ] ; then
+    simple=$(mktemp --suffix=.bin)
+    clang -o "$simple" interpreter.c
+fi
 brainfuck-simple () {
     # EOF is -1 (fgetc)
     # memory is char[30000], not a loop
-    if [ ! -x ./interpreter ] ; then
-        $CC -o interpreter interpreter.c
-    fi
-    ./interpreter "$@"
+    "$simple" "$@"
 }
 brainfuck-bf () {
     bf "$1"
@@ -43,8 +45,12 @@ if brainfuck <(echo "-.") | hexdump | diff - <(python -c 'import sys; sys.stdout
     exit 1
 fi
 
+bin=../dist/build/forth-to-brainfuck/forth-to-brainfuck
+if not which $bin ; then
+    bin=forth-to-brainfuck
+fi
 translate () {
-    brainfuck <(runghc ForthToBrainfuck.hs)
+    brainfuck <($bin)
 }
 
 error=$(mktemp)
@@ -115,11 +121,11 @@ assert 'char A 0 if char t emit                  then emit'  A
 assert 'char A 7 if char t emit else char f emit then emit' tA
 assert 'char A 0 if char t emit else char f emit then emit' fA
 
-for f in test/*.fs ; do
+for f in *.fs ; do
     cat "$f" | preserve
 done
 
-for f in example/*.fs ; do
+for f in ../example/*.fs ; do
     cat "$f" | preserve
 done
 
@@ -146,6 +152,10 @@ if false ; then
             echo "$a $b /mod . . bye" | preserve
         done
     done
+fi
+
+if [ "$simple" ] ; then
+    rm "$simple"
 fi
 
 returncode=$(cat $error | wc -l)
