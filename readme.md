@@ -3,7 +3,7 @@
 ## how to use
 
 ``` sh
-    $ cat forth.fs | runhaskell ForthToBrainfuck.hs > brainfuck.bf
+    $ cat forth.fs | forth-to-brainfuck > brainfuck.bf
 ```
 
 ## example
